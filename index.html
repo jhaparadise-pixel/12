@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Vanity Wallet Generator</title>
+
+<style>
+body {
+  margin: 0;
+  background: #0b0f1a;
+  color: #e5e7eb;
+  font-family: Inter, system-ui, sans-serif;
+}
+header {
+  padding: 20px;
+  text-align: center;
+  border-bottom: 1px solid #1f2937;
+}
+header h1 {
+  margin: 0;
+  font-size: 24px;
+}
+header span {
+  font-size: 13px;
+  opacity: 0.7;
+}
+main {
+  max-width: 900px;
+  margin: auto;
+  padding: 30px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.panel, .result {
+  background: #111827;
+  border-radius: 14px;
+  padding: 20px;
+}
+label {
+  font-size: 13px;
+  margin-top: 14px;
+  display: block;
+}
+input, select {
+  width: 100%;
+  padding: 10px;
+  background: #020617;
+  border: 1px solid #1f2937;
+  color: #22c55e;
+  border-radius: 8px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+#start {
+  background: #2563eb;
+  color: #fff;
+}
+#stop {
+  background: #dc2626;
+  color: #fff;
+}
+.status {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+pre {
+  background: #020617;
+  padding: 15px;
+  border-radius: 10px;
+  color: #22c55e;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+footer {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>Vanity Wallet Generator</h1>
+  <span>Local · Secure · Client-Side Only</span>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Generate Custom Address</h2>
+
+    <label>Network</label>
+    <select disabled>
+      <option>Ethereum / EVM</option>
+    </select>
+
+    <label>Prefix (e.g. 0x888)</label>
+    <input id="prefix" placeholder="0x888" />
+
+    <label>Suffix (optional)</label>
+    <input id="suffix" placeholder="888" />
+
+    <div class="actions">
+      <button id="start">Start</button>
+      <button id="stop">Stop</button>
+    </div>
+
+    <div class="status">
+      <span id="attempts">Attempts: 0</span>
+      <span id="speed">Speed: 0/s</span>
+    </div>
+  </div>
+
+  <div class="result">
+    <h2>Result</h2>
+    <pre id="output">Waiting...</pre>
+  </div>
+</main>
+
+<footer>
+  © Vanity Wallet Generator · Private keys never leave your device
+</footer>
+
+<script>
+/* ========= Web Worker 内嵌 ========= */
+const workerCode = `
+importScripts('https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js');
+
+onmessage = (e) => {
+  const { prefix, suffix } = e.data;
+  let count = 0;
+  const start = Date.now();
+
+  while (true) {
+    const wallet = ethers.Wallet.createRandom();
+    const addr = wallet.address.toLowerCase();
+    count++;
+
+    if (
+      (!prefix || addr.startsWith(prefix)) &&
+      (!suffix || addr.endsWith(suffix))
+    ) {
+      postMessage({
+        type: 'found',
+        address: wallet.address,
+        privateKey: wallet.privateKey
+      });
+      break;
+    }
+
+    if (count % 5000 === 0) {
+      postMessage({
+        type: 'progress',
+        count,
+        time: Date.now() - start
+      });
+    }
+  }
+};
+`;
+
+const blob = new Blob([workerCode], { type: "application/javascript" });
+const workerURL = URL.createObjectURL(blob);
+
+let worker;
+let lastCount = 0;
+let lastTime = Date.now();
+
+start.onclick = () => {
+  output.textContent = "Generating...";
+  attempts.textContent = "Attempts: 0";
+  speed.textContent = "Speed: 0/s";
+
+  worker = new Worker(workerURL);
+
+  worker.postMessage({
+    prefix: prefix.value.toLowerCase(),
+    suffix: suffix.value.toLowerCase()
+  });
+
+  worker.onmessage = (e) => {
+    if (e.data.type === "progress") {
+      attempts.textContent = "Attempts: " + e.data.count;
+
+      const now = Date.now();
+      const diffCount = e.data.count - lastCount;
+      const diffTime = (now - lastTime) / 1000;
+
+      speed.textContent =
+        "Speed: " + Math.floor(diffCount / diffTime) + "/s";
+
+      lastCount = e.data.count;
+      lastTime = now;
+    }
+
+    if (e.data.type === "found") {
+      output.textContent =
+        "Address:\\n" + e.data.address +
+        "\\n\\nPrivate Key:\\n" + e.data.privateKey;
+      worker.terminate();
+    }
+  };
+};
+
+stop.onclick = () => {
+  worker && worker.terminate();
+};
+</script>
+
+</body>
+</html>
